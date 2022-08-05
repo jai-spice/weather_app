@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http; // deferred import
+import 'package:http/http.dart' as http;
+import 'package:weather_app/weather.dart'; // deferred import
 
 void main() => runApp(const MyApp());
 
@@ -27,7 +29,7 @@ class WeatherApp extends StatefulWidget {
 class _WeatherAppState extends State<WeatherApp> {
   final TextEditingController queryController = TextEditingController();
 
-  String _currentTemperature = '';
+  Weather? _weather;
 
   bool _isLoading = false;
 
@@ -43,17 +45,34 @@ class _WeatherAppState extends State<WeatherApp> {
   }
 
   Future<void> search(String query) async {
-    if (query.isNotEmpty) {
-      setState(() {
-        _isLoading = true;
-      });
+    setState(() {
+      _isLoading = true;
+    });
+    http.Response? response;
+    try {
       final uri = Uri.parse(
           'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$query?unitGroup=metric&key=9JKGUSYZW2RMRYDJBRM9L83ZH&contentType=json');
-      final response = await http.get(uri);
-      final data = json.decode(response.body);
+      response = await http.get(uri);
+      if (response.statusCode == HttpStatus.ok) {
+        final data = json.decode(response.body);
+        setState(() {
+          _weather = Weather.fromJson(data); // Weather /// TYPE SAFE
+        }); // Map<String, dynamic> !!! NOT TYPE SAFE
 
+      } else {
+        throw Exception("Status: ${response.statusCode}");
+      }
+    } on FormatException catch (_) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('${response?.body}')));
+    } on SocketException catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No Internet Connection!')));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
       setState(() {
-        _currentTemperature = '${data["currentConditions"]["temp"]} °C';
         _isLoading = false;
       });
     }
@@ -79,6 +98,12 @@ class _WeatherAppState extends State<WeatherApp> {
             ),
           ),
           TextButton(
+            style: TextButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: Theme.of(context).primaryColor),
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+            ),
             child: const Text('Search'),
             onPressed: () {
               search(queryController.text);
@@ -87,9 +112,18 @@ class _WeatherAppState extends State<WeatherApp> {
           if (_isLoading)
             const Center(child: CircularProgressIndicator())
           else
-            Text(
-              _currentTemperature,
-              style: Theme.of(context).textTheme.headline1,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Temperature at ${_weather?.resolvedAddress ?? "-"} is ',
+                  style: Theme.of(context).textTheme.headline3,
+                ),
+                Text(
+                  '${_weather?.currentConditions.temp ?? "-"}°C',
+                  style: Theme.of(context).textTheme.headline3,
+                ),
+              ],
             ),
         ],
       )),
